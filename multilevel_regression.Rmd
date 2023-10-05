@@ -1,0 +1,196 @@
+---
+title: "Assignment 4"
+author: "Roland Abi"
+subtitle: Gelman & Hill Ch13 (Q13.2, 13.4, 13.5)
+output: pdf_document
+---
+
+### 
+
+```{r include=FALSE}
+library(tidyverse)
+library(arm)
+library(lme4)
+theme_set(theme_bw())
+library(janitor)
+```
+
+### Q13.2a
+
+Given the raters uses different standards we would attempt to establish a model that captures this differences as stated below:
+
+<center>$y_i \sim N(\alpha_j{[i]} + \beta X_i + \delta^2_j)$</center>
+
+<center>$\alpha_j{_{[i]}} \sim N(\gamma^\alpha_0 + \gamma^\alpha_j\mu_j, \delta^2_\alpha)$</center>
+
+<center>$y_i = \gamma^\alpha_0 + \gamma^\alpha_j\mu_j + \beta X_i + \epsilon_j$</center>
+
+where $y_i$ = $rating$ $scores$
+
+$\gamma^\alpha_0 = Intercept$
+
+$\gamma^\alpha_j\mu_j =$ $raters$\_$id$
+
+$X_i =$ $applicants$\_ id
+
+***In R this is implemented as:***
+
+<center>**`M1 <- lmer(rating_scores~applicants_ID+raters_ID+(1|raters_ID))`**</center>
+
+### Q13.2b
+
+It is possible that some persons on the committee show more variation than others in their ratings. Expand your model to allow for this. If this is the case then we will account for group level variation for each rater. The model can be expanded as follows:
+
+<center>**`M2 <- lmer(rating_scores ~ applicants_ID + raters_ID + (1 + raters_ID|raters_ID))`**</center>
+
+### Q13.4
+
+```{r include=FALSE}
+age.guessing <- read_csv("ages-2.csv") |>
+  clean_names() |>
+  na.omit()
+```
+
+#### Model specification
+
+<center>$y_i \sim N(\mu + \gamma_j{_{[i]}} + \delta_k{_{[i]}}, \delta^2_y)$ $for$ $i = 1, \dots ,n$</center>
+
+<center>$\gamma_j \sim N(0, \delta^2_\gamma)$ $for$ $j = 1, \dots ,J$</center>
+
+<center>$\delta_k \sim N(0, \delta^2_\delta)$ $for$ $k = 1, \dots ,K$</center>
+
+Where $y_j$ represent the guessed age; $\gamma_j$ represents the persons effect and $\delta_k$ represents the groups effect respectivetly.
+
+#### Data transformation
+
+```{r}
+# Transform the dataframe from a wider frame to a vector format
+trage <- age.guessing |>
+  dplyr::select(group:x10) |>
+  pivot_longer(
+    cols = c(x1:x10),
+    names_to = "persons",
+    values_to = "age_guess"
+  ) |>
+  relocate(age_guess)
+
+trage <- trage |>
+  mutate(
+    age_guess = abs(age_guess)
+  )
+```
+
+#### Model
+
+```{r}
+m3 <- lmer(age_guess ~ 1 + (1|persons) + (1|group), data = trage)
+display(m3)
+```
+
+### 
+
+### Q13.5
+
+```{r include=FALSE}
+dta <- read_csv("allvar.csv") |>
+  na.omit() |>
+  mutate(
+    time = visage - baseage,
+    rootcd4pct = sqrt(CD4PCT),
+    treatment = as_factor(treatmnt),
+    newpid = as.character(newpid)
+  )
+
+head(dta)
+```
+
+#### Q13.5a Model with varying slope
+
+```{r}
+mlm_vslope <- lmer(rootcd4pct ~ time + treatmnt + baseage + (1 + time | newpid), data=dta)
+display(mlm_vslope, digits=3)
+```
+
+#### Q13.5b Model without varying slope
+
+```{r}
+mlm_wslope <- lmer(rootcd4pct ~ factor(time) + (1| newpid), data=dta)
+display(mlm_wslope, digits=3)
+```
+
+#### Q13.5c
+
+#### Graphically
+
+```{r}
+# Extract the estimates from two models
+est.mlm_vslope <- coef(mlm_vslope)$newpid[,1]
+SE.mlm_vslope <- se.ranef(mlm_vslope)$newpid[,1]
+est.mlm_wslope <- coef(mlm_wslope)$newpid[,1]
+SE.mlm_wslope <- se.ranef(mlm_wslope)$newpid[,1]
+
+
+# Make data frames for plotting
+## Long form
+plot.df1 <- data.frame(ID = rep(1:length(est.mlm_vslope), 2),
+                       Model = c(rep("Model1", length(est.mlm_vslope)),
+                                 rep("Model2", length(est.mlm_wslope))),
+                       Estimate = c(est.mlm_vslope, est.mlm_wslope),
+                       SE = c(SE.mlm_vslope, SE.mlm_wslope))
+
+
+a.hat <- data.frame(Model = c("Model1", "Model2"),
+                    a.hat = c(fixef(mlm_vslope)["(Intercept)"], 
+                              fixef(mlm_wslope)["(Intercept)"]))
+
+## Define confidence intervals
+interval1 <- -qnorm((1-0.95)/2) # 95% multiplier
+interval2 <- -qnorm((1-0.99)/2) # 99% multiplier
+```
+
+```{r, warning=FALSE, fig.align='center'}
+ggplot(plot.df1) +
+  geom_hline(data = a.hat, aes(yintercept = a.hat), "twodash", color = "red",
+             lwd = 2) +
+  geom_linerange(aes(x = ID, ymin = Estimate - SE*interval1,
+                     ymax = Estimate + SE*interval1),
+                 position = position_dodge(width = 2/3),
+                 alpha = 0.75, lwd = 0.75, show.legend=FALSE) +
+  geom_pointrange(aes(x = ID, y = Estimate, ymin = Estimate - SE*interval2,
+                    ymax = Estimate + SE*interval2),
+                position = position_dodge(width = 2/3),
+                alpha = 0.75, lwd = 0.45, shape = 21, fill = "WHITE",
+                show.legend=FALSE) +
+  theme_bw() +
+  theme(
+    legend.position = "none"
+  ) +
+  labs(x = " ", y = "Estimated Regression Intercept (Square Root)") +
+  facet_wrap(~Model)
+```
+
+They appears strong similarities between the varying slope model (model 1) and the varying coefficient model (model2) however, in model 1 the intercepts appears more clustered around the average intercept.
+
+#### Numerically
+
+```{r}
+# standard error of data, model 1 
+sigma.hat(mlm_vslope)$sigma$data
+```
+
+```{r}
+#standard error of group level model 1
+sigma.hat(mlm_vslope)$sigma$newpid
+```
+
+```{r}
+# standard error of data, model 2 
+sigma.hat(mlm_wslope)$sigma$data
+```
+
+```{r}
+#standard error of group level model 2
+sigma.hat(mlm_wslope)$sigma$newpid
+```
+
+Comparing the standard deviations of the models, we observed that model 1 with varying slope has individual-level variability $\hat{\delta_y}$ = 0.705 and group level variability $\hat{\delta_\alpha}$ = 1.395. The second model, model without varying slope but with individual time coefficients has individual-level variability $\hat{\delta_y}$ = 0.702 and group level variability $\hat{\delta_\alpha}$ = 1.419. The standard deviation at the individual level in model 2 is slightly less as compared to model 1. The variance ratio of the first model is `r (1.395)^2/(0.705)^2` and the variance ratio of the second model is `r (1.419)^2/(0.702)^2`. The slight increase in the variance ratio for model indicates that estimating individual coefficient for the time variable does not improve the estimation of the effects of group.
