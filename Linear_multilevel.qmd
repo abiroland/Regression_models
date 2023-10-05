@@ -1,0 +1,284 @@
+---
+title: "Assignment_3"
+author: "Roland Abi"
+format: pdf
+editor: visual
+---
+
+```{r echo=FALSE}
+library(tidyverse)
+library(broom)
+library(lme4)
+library(patchwork)
+library(arm)
+```
+
+```{r}
+dta <- read_csv("allvar.csv") |>
+  na.omit()
+```
+
+Cleaned the dataset missing values are updated using mean imputation methods.
+
+```{r}
+new_dta <- dta |>
+  mutate(
+    time = visage - baseage,
+    sqrt_cd4pct = sqrt(CD4PCT),
+    treatment = as_factor(treatmnt),
+    newpid = as.character(newpid)
+  )
+```
+
+## Q11.4a
+
+```{r}
+new_dta |>
+  ggplot(aes(x = time, y = sqrt_cd4pct, color = as_factor(newpid))) +
+  geom_point() + 
+  theme_bw() + 
+  labs(
+    x = "Time",
+    y = "Square root of CD4 Percentage"
+  ) + 
+  theme(
+    legend.position = "none"
+  )
+```
+
+## Q11.4b
+
+```{r}
+new_dta |>
+  ggplot(aes(x = time, y = CD4PCT, color=factor(newpid)) )+	
+  geom_smooth(se=F,method = "lm") +
+  labs(y = "CD4 Percentage", x="Time (visit_age - base_Age) ")+	
+  theme_classic()+	
+  theme(legend.position="none") 
+```
+
+\
+The plot above is quiet difficult to make sense of, lets run a simplified plot taking a subset of the data
+
+```{r}
+subset <- c(3,4,6,7,10,11,12,15,17,19,62,63,67)
+
+new_dta |>
+  filter(newpid %in% subset) |>
+  ggplot(aes(x = time, y = CD4PCT)) +	
+  guides(colour="none") +	
+  labs(y = "CD4 Percentage", x="Time (visage - baseage) ")+	
+  theme_bw()+	
+  theme(legend.position="none") +	
+  geom_line(aes(color=factor(newpid)))+	
+  geom_point()+	
+  facet_wrap(~factor(newpid)) +	
+  geom_smooth(se=F, colour="black", method = "lm")
+```
+
+Proportion of CD4 appears to be decreasing with time
+
+```{r}
+new_dta |>
+  ggplot(aes(x = time, y = CD4PCT))+	
+                    #  geom_point()+	
+                    geom_smooth(se=F,method = "lm") +	
+                    labs(y = "CD4 Percentage", x="Time (visit_age - base_Age) ")+	
+                    theme_classic()+	
+                    theme(legend.position="none")
+```
+
+The plot above shows a negative slope, this shows that the effect of the treatment is not uniform all children and could be better explained by some child level factors
+
+## Q11.4c
+
+```{r warning=FALSE}
+
+mod1 <- new_dta |>
+  dplyr:: group_by(newpid) |>
+  dplyr::select(newpid, CD4PCT, time) |>
+  dplyr::mutate(intercept = coef(lm(CD4PCT ~ time))[1],
+         slope = coef(lm(CD4PCT ~ time))[2]) 
+
+mod2 <- inner_join(new_dta, mod1, by = "newpid")
+
+mod2
+
+mod_fit_intercept <- lm(intercept ~ baseage + treatment, data = mod2)
+mod_fit_slope <- lm(slope ~ baseage + treatment, data = mod2)
+```
+
+```{r}
+summary(mod_fit_intercept)
+```
+
+```{r}
+summary(mod_fit_slope)
+```
+
+## Q12.2a
+
+```{r}
+mod.fit12 = glmer(CD4PCT ~ time + (1|newpid), data = new_dta)
+
+summary(mod.fit12)
+```
+
+Given that this model is a varying-intercept model, it only accounts for variation that is due to individual level differences in baseline CD4 percent. The time variable assumes a constant effect on CD4 percentage that varies with each child.
+
+## Q12.2b
+
+```{r}
+mod.fit12b <- glmer(CD4PCT ~ time + treatmnt + baseage + (1|newpid),data = new_dta)
+summary(mod.fit12b)
+```
+
+**Time:** Each year on treatment was associated with a 3.27% decrease in CD4 percentage on average.
+
+**Treatment:** Children who were on second treatment had 1.91% higher CD4 percentage on average than children on first treatment.
+
+**Baseline Age:** A one year increase in baseline age is associate with a 0.93% decrease in CD4 percentage on average. This implies the earlier children were admitted the more their CD4 percentage increased.
+
+## Q12.2c
+
+```{r}
+# model for question Q12.2a	
+df <- coef(mod.fit12)[["newpid"]]	
+df$intercept <- df$'(Intercept)' 
+df_mod_fit12a <- df |>
+  dplyr::select(intercept, slope_time = time) |>
+  as_tibble() |>
+  rownames_to_column("newpid") |> 	
+  add_column(model = "Model 12.2a")
+
+head(df_mod_fit12a)
+```
+
+```{r}
+# model for question Q12.2b	
+df2 <- coef(mod.fit12b)[["newpid"]]	
+df2$intercept <- df2$'(Intercept)' 
+df_mod_fit12b <- df2 |>
+  dplyr::select(intercept, slope_time = time) |>
+  as_tibble() |>
+  rownames_to_column("newpid") |> 	
+  add_column(model = "Model 12.2b")
+
+head(df_mod_fit12b)
+```
+
+```{r}
+# complete pooling	
+complete_pooling.fit<-lm(CD4PCT ~ time, data = new_dta)	
+	
+df_complete_pooling <- data.frame(	
+  model = "Complete pooling",	
+  newpid = unique(new_dta$newpid),	
+  intercept = coef(complete_pooling.fit)[1], 	
+  slope_time = coef(complete_pooling.fit)[2])
+
+head(df_complete_pooling)
+```
+
+```{r}
+# bind data	
+df_models <- bind_rows(df_mod_fit12a, df_mod_fit12b, df_complete_pooling) |>
+  left_join(new_dta, by = "newpid")
+
+df_models
+```
+
+```{r}
+# create subset	
+subset2 <- c(67,72,73,78,79,11,12,19,27,23,62,63)
+
+  ggplot(df_models[df_models$newpid %in% subset2,]) +
+    aes(x = time, y = CD4PCT) +
+    geom_abline(aes(intercept = intercept, 
+                slope = slope_time, color = model), size = .75, lwd = 1) +
+    geom_point() + 
+    facet_wrap("newpid") +	
+    labs(y = "CD4 Percentage", x="Time (visage - baseage) ")+	
+    theme_bw() + 
+    scale_x_continuous(breaks = 0:4 * 2) + 	
+    scale_color_manual(values = c("#025464", "#E57C23", "#5B0888"))+ 
+    theme(legend.position = "top")
+```
+
+From the plot, observe that the partial pooling model with added child-level predictors (Model 12.2b) is pulled substantially towards the complete pooling model (group average) compared to Model 12.2a
+
+If you take a look at children with less observations (incomplete data), you will notice that Model 12.2b is pulled more towards the complete pooling model (group average) compared to Model 12.2a. See child 71, 73, 77, 80, 96.
+
+**Numerically**
+
+```{r}
+
+anova_mixd <- anova(mod.fit12, mod.fit12b)	
+anova_mixd
+```
+
+Comparing the two models using ANOVA we discovered that model 12.2b with child-level predictors treatment and base age performed better as it's statistically significant and had lower AIC and Deviance as compared to model 12.2a.
+
+**Graphically**
+
+```{r}
+q2a_plota <- as.data.frame(lme4::ranef(mod.fit12,condVar=T)) %>%	
+  ggplot(aes(y=grp,x=condval))+	
+  geom_point()+
+  facet_wrap(~term,scales="free_x")+	
+  geom_errorbarh(aes(xmin=condval-2*condsd,xmax=condval+2*condsd),height=0)+	
+  labs(x="Random Effects", y="Children", title = "Model 12.2a") +	
+  theme_classic()+ 	
+  guides(fill=FALSE)
+
+
+q2a_plotb <- as.data.frame(lme4::ranef(mod.fit12b,condVar=T)) %>%	
+  ggplot(aes(y=grp,x=condval))+	
+  geom_point()+
+  facet_wrap(~term,scales="free_x")+	
+  geom_errorbarh(aes(xmin=condval-2*condsd,xmax=condval+2*condsd),height=0)+	
+  labs(x="Random Effects", y="Children", title = "Model 12.2b") +	
+  theme_classic()+ 	
+  guides(fill=FALSE)
+	
+	
+q2a_plota/q2a_plotb
+```
+
+From the above plot, notice the scale of each plot. Model 12.2.A has higher random error than Model 12.2.B. This implies that adding child-level predictors reduces the variance of our random effect estimate. We noticed a substantial reduction in the variance of the intercept - 130.25 to 125.89. This is mainly because some of the variations had been explained by the addition of fixed effect predictors like base age and treatment.
+
+## Q12.2d
+
+As seen in the previous question, We observed that by adding child-level predictors (i.e, group-level predictors) the model improved significantly hence increasing the precision of our estimates. The addition of the two fixed effect predictors like baseage and treatment made the variance of the random effect estimates to reduce by 5 units essentially by compromising between group level and individual level variation. However, the residual did not reduced by much.
+
+## Q12.5
+
+```{r}
+# load the data
+srrs2 <- read_csv("../Week3/exercise 3 (1)-1/srrs2.dat")
+mn<-srrs2$state=="MN"
+radon<-srrs2$activity[mn]
+log.radon<-log(ifelse(radon==0,.1,radon))
+floor<-srrs2$floor[mn]  # 0 FOR BASEMENT,1 FOR FIRSTFLOOR 
+n<-length(radon) 
+y<-log.radon 
+x<-floor
+# NOW CREATE MAPPING OF COUNTY NAMES TO 919 HOUSES 
+county.name<-as.vector(srrs2$county[mn])
+uniq<-unique(county.name) #CREATE UNIQUE VERSION
+J<-length(uniq)  # J GETS 85 
+county<-rep(NA,n) #WILL MAP 919->85 
+for (i in 1:J) county[county.name==uniq[i]]<-i
+```
+
+```{r}
+M1 <- glmer(y ~ x + county  +  (1 | county))
+
+summary(M1)
+```
+
+```{r}
+fixef(M1)
+```
+
+$Radon = 1.4044 - 0.6921*floor + 0.0013*county$

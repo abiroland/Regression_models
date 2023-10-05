@@ -1,4 +1,4 @@
-library(tidyverse)
+q(library(tidyverse)
 library(broom)
 library(foreign)
 library(GGally)
