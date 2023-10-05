@@ -1,0 +1,221 @@
+---
+title: "Assignment 5"
+author: "Roland Abi"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(digits = 5)
+```
+
+```{r include=FALSE}
+library(tidyverse)
+library(lme4)
+library(foreign)
+library(arm)
+library(data.table)
+```
+
+### Data preparation
+
+```{r}
+dta1<- read_csv("speed-1.dating.csv")
+
+dta2_b <- dta1 |>
+  dplyr::select(id, iid, partner, pid, dec, attr:shar) |>
+  drop_na()
+```
+
+```{r}
+
+n <- length(dta2_b$dec)
+uniq <- unique(dta2_b$id)
+ids <- rep(NA, n)
+
+for (i in 1:length(uniq)) {
+  ids[dta2_b$id == uniq[i]] <- i
+}
+dta2_b$ids <- ids
+```
+
+### Q14.5a
+
+```{r}
+
+complete_pooling <- glm(dec ~ attr + sinc + intel + fun + amb + 
+                          shar, data = dta2_b, family = binomial(link = "logit"))
+
+summary(complete_pooling)
+```
+
+$Attractiveness:$ the coefficient of `Attractiveness` is
+`r coef(complete_pooling)[[2]]`, which when divided by 4 gives
+`r (coef(complete_pooling)[[2]]/4)*100`, implies a 1% increase in attractiveness
+score suggest that the rater was 15.9%% more likely to see their date
+again.
+
+$Sincere:$ the coefficient of `sincerity` is `r coef(complete_pooling)[[3]]`, which
+when divided by 4 gives `r (coef(complete_pooling)[[3]]/4)*100`, implying a 1%
+increase in sincerity score suggest that the rate was 1.74% more likely
+to see their date again
+
+$Inteligence:$ the coefficient of `Intelligence` is `r coef(complete_pooling)[[4]]`
+which when divided by 4 gives `r (coef(complete_pooling)[[4]]/4)*100`, implies a 1%
+increase in intelligence score suggest that the rater was 0.38% more
+likely to see their date again.
+
+$Fun:$ the coefficient of `fun` is `r coef(complete_pooling)[[5]]` which when divided
+by 4 gives `r (coef(complete_pooling)[[5]]/4)*100`, which implies the funnier the
+date, the more likely the rater will go on a repeat date.
+
+$Ambitious:$ the coefficient of `Ambitious` is `r coef(complete_pooling)[[6]]` which
+when divided by 4 gives `r (coef(complete_pooling)[[6]]/4)*100`, implies the less
+ambitious the date, the less likely there is going to be a repeat date
+
+$Shared interest:$ the coefficient of `shared interest` is
+`r coef(complete_pooling)[[7]]` which when divided by 4 gives
+`r (coef(complete_pooling)[[7]]/4)*100`, implies the chances of a repeat date
+increases by 6.91% if the rater and their date share similar interests.
+
+The The standard errors of the six variables were fairly within a
+consistent range while the variables attractiveness, fun, ambitious and
+shared interests, significantly contributed to determining if the rater
+will be interested in seeing their date again.
+
+### Q14.5b
+
+```{r}
+m2 <- glmer(dec ~ attr + sinc + intel + fun + amb + shar + (1|id), 
+            data = dta2_b, family = binomial(link = "logit"),
+           glmerControl(optimizer = c("bobyqa","Nelder_Mead"), 
+                        optCtrl=list(maxfun=1e+05)))
+
+summary(m2)
+```
+
+Model 2 (m2) which expands model (m1) to allow varying intercepts for
+persons making the evaluation shows slightly similar coefficient
+estimates. Having a group standard deviation 0.404 which is less than
+the standard deviation for for the classical logistic regress model 1
+(m1) `r sigma(complete_pooling)`
+
+### Q14.5c
+
+```{r}
+m3 <- glmer(dec ~ attr + sinc + intel + fun + amb + shar + (1|id) + (1|pid), 
+            data = dta2_b, family = binomial(link = "logit"),
+           glmerControl(optimizer = c("bobyqa","Nelder_Mead"), 
+                        optCtrl=list(maxfun=1e+05)))
+
+summary(m3)
+```
+
+Model 3 (m3) which expands model 2 (m2) to allow varying intercepts for
+persons making the evaluation shows slightly similar coefficient
+estimates to model 2. Adding a variable for partner variability didn't
+lead to a significant change in variance between between model 2 which
+shows variability for persons making the evaluation
+
+### Q14.6a
+
+```{r}
+no_pooling <- glm(dec ~ attr + sinc + intel + fun + amb + shar + as.factor(id)-1, data = dta2_b, 
+          family = binomial(link = "logit"))
+
+summary(no_pooling)
+```
+
+### Q14.6b
+
+```{r}
+m5 <- glmer(dec ~ scale(attr) + scale(sinc) + scale(intel) + scale(fun) + scale(amb)
+           + scale(shar) + (scale(attr) + scale(sinc) + scale(intel) + scale(fun)
+                            + scale(amb) + scale(shar) + 1|id), data = dta2_b, 
+           family = binomial(link = "logit"))
+
+summary(m5)
+```
+
+###Q14.6c
+
+```{r}
+anova(m5, complete_pooling, no_pooling)
+```
+
+The model evaluation shows that the multilevel model with varying
+intercepts and coefficients performs better than the no pooling and
+complete pooling models as showing in having lower AIC and deviance.
+
+### Q15
+
+```{r}
+nes5200 <- read.dta("nes5200_processed_voters_realideo-1.dta")
+```
+
+### Q15.
+
+```{r}
+nes5200_dt <- data.table(nes5200)
+  yr <- 2000
+nes5200_dt_s<-nes5200_dt[ year==yr,]
+nes5200_dt_s$income <- droplevels(nes5200_dt_s$income)
+nes5200_dt_s$partyid7 <- droplevels(nes5200_dt_s$partyid7)
+
+nes5200_dt_s$gender <- factor(nes5200_dt_s$gender, labels=c("male", "female"))
+nes5200_dt_s$race <- factor(nes5200_dt_s$race, labels=c("white", "black", "asian", 
+                                    "native american", "hispanic"))
+nes5200_dt_s$south <- factor(nes5200_dt_s$south)
+nes5200_dt_s$ideo <- factor(nes5200_dt_s$ideo, labels=c("liberal", "moderate", "conservative"))
+
+nes_data_comp<-nes5200_dt_s[complete.cases(nes5200_dt_s[,list(partyid7,income,ideo,female,white)])]
+nes_data_comp$ideology <- scale(nes_data_comp$ideo_feel,center=TRUE)
+```
+
+```{r}
+newnes5200 <- nes5200_dt_s |>
+  mutate(
+    new_partyid7 = as.numeric(str_extract(partyid7, "[[:digit:]]"))
+  ) |> relocate(new_partyid7)
+
+nes_5200 <- newnes5200[complete.cases(newnes5200, list(new_partyid7, gender, race, ideo))]
+
+new
+```
+
+### Q15.1
+
+$yij$ =
+$\begin{cases} 0 & if & z_{i} & = & Gore \\ 1 & if & z_{i}&=&noopinion \\ 2&if&z_{i}&=&Bush \end{cases}$
+
+$z_i \sim logistic(X_i\beta, \sigma^2)$
+
+$z_i = logit^-1(\alpha_{i[j]} + partyideology_{kj[i]} + ethnicity_{lj[i]} + Age_{mj[i]} + Education_{nj[i]})$
+
+$where$ $\alpha_j \sim N(0, \delta^2_\alpha)$ $j = 1,\dots ,nstates$
+
+### Q15.2a
+
+$yij$ =
+$\begin{cases} 1 & if & z_{i} & = & strong-democrat \\ 2 & if & z_{i}&=&weak-democrat \\ 3&if&z_{i}&=&independent-democrat \\ 4&if&z_{i}&=&independent-independent \\ 5&if&z_{i}&=&independent-republican \\ 6&if&z_{i}&=&weak-republican \\ 7&if&z_{i}&=&strong-republican \end{cases}$
+
+$z_i \sim logistic(X_i\beta, \sigma^2)$
+
+$z_i = logit^-1(\alpha_{i[j]} + partyideology_{kj[i]} + ethnicity_{l} + Age_{m} + gender_{n})$
+
+$k = 1, \dots,3 l = 1,\dots,4; n = 1, \dots,2; j = 1,\dots ,nstates; i = 1,\dots,n$
+
+$where$ $\alpha_j \sim N(0, \delta^2_\alpha)$
+
+### Q15.2b
+
+```{r}
+m6 <- lmer(scale(new_partyid7) ~ ideo + scale(black) + scale(female) + scale(age) +  
+             (1 + ideo|state), data = newnes5200)
+```
